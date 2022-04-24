@@ -1,1 +1,4 @@
 testfiles/
+.vscode/
+server.DSYM/
+.DS_Store
