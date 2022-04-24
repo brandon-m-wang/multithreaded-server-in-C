@@ -7,22 +7,32 @@
 #include <stdbool.h>
 #include <limits.h>
 #include <pthread.h>
+#include "socketqueue.h"
 
 #define SERVERPORT 8989
 #define BUFSIZE 4096
 #define SOCKETERROR (-1)
 #define SERVER_BACKLOG 100
+#define THREAD_POOL_SIZE 20
+
+pthread_t thread_pool[THREAD_POOL_SIZE];
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
 
 void *handle_connection(void *p_client_socket);
 int check(int exp, const char *msg);
+void * thread_function(void *arg);
 
 int main(int argc, char **argv)
 {
     int server_socket, client_socket, addr_size;
     SA_IN server_addr, client_addr;
+
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_create(&thread_pool[i], NULL, thread_function, NULL);
+    } 
 
     check((server_socket = socket(AF_INET, SOCK_STREAM, 0)),
           "Failed to create socket");
@@ -39,7 +49,6 @@ int main(int argc, char **argv)
 
     while (true)
     {
-
         printf("Waiting for connections...\n");
         // wait for, and eventually accept an incoming connection
         addr_size = sizeof(SA_IN);
@@ -48,13 +57,11 @@ int main(int argc, char **argv)
               "accept failed");
         printf("Connected!\n");
 
-        // do whatever we do with connections.
-        pthread_t t;
         int *pclient = malloc(sizeof(int));
         *pclient = client_socket;
-
-        pthread_create(&t, NULL, handle_connection, pclient);
-        // handle_connection(pclient);
+        pthread_mutex_lock(&mutex);
+        enqueue(pclient);
+        pthread_mutex_unlock(&mutex);
     }
 
     return 0;
@@ -68,6 +75,18 @@ int check(int exp, const char *msg)
         exit(1);
     }
     return exp;
+}
+
+void *thread_function(void *arg) {
+    while (true) {
+        pthread_mutex_lock(&mutex);
+        int *pclient = dequeue(); // thread safe!
+        pthread_mutex_unlock(&mutex);
+        if (pclient != NULL) {
+            // connection available
+            handle_connection(pclient);
+        }
+    }
 }
 
 void *handle_connection(void *p_client_socket)

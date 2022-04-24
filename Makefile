@@ -1,10 +1,11 @@
 CC=clang
 CFLAGS=-g
 BINS=server
+OBJS=server.o socketqueue.o
 
 all: $(BINS)
 
-%server: %server.o
+server: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c
