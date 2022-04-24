@@ -92,7 +92,7 @@ void *thread_function(void *arg) {
 void *handle_connection(void *p_client_socket)
 {
     int client_socket = *((int *)p_client_socket);
-    free(p_client_socket); // we really don't need this anymore.
+    free(p_client_socket);
     char buffer[BUFSIZE];
     size_t bytes_read;
     int msgsize = 0;
