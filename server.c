@@ -12,11 +12,12 @@
 #define SERVERPORT 8989
 #define BUFSIZE 4096
 #define SOCKETERROR (-1)
-#define SERVER_BACKLOG 100
-#define THREAD_POOL_SIZE 20
+#define SERVER_BACKLOG 125
+#define THREAD_POOL_SIZE 50
 
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
@@ -32,7 +33,7 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < THREAD_POOL_SIZE; i++) {
         pthread_create(&thread_pool[i], NULL, thread_function, NULL);
-    } 
+    }
 
     check((server_socket = socket(AF_INET, SOCK_STREAM, 0)),
           "Failed to create socket");
@@ -61,6 +62,7 @@ int main(int argc, char **argv)
         *pclient = client_socket;
         pthread_mutex_lock(&mutex);
         enqueue(pclient);
+        pthread_cond_signal(&condition_var);
         pthread_mutex_unlock(&mutex);
     }
 
@@ -78,14 +80,27 @@ int check(int exp, const char *msg)
 }
 
 void *thread_function(void *arg) {
+    // thread safe!
     while (true) {
+        int *pclient;
+        // lock the queue (to modify)
         pthread_mutex_lock(&mutex);
-        int *pclient = dequeue(); // thread safe!
+        // if thread can't get work off the queue (no tasks), wait for 
+        // signal from main thread (meaning work has been enqueued).
+        // this is to prevent having the thread wait every time
+        // it finishes its task (serving a connection) until a new
+        // connection comes
+        if ((pclient = dequeue()) == NULL) {
+            // pass in mutex pointer as we free the lock and
+            // reacquire before pthread_cond_wait returns
+            pthread_cond_wait(&condition_var, &mutex);
+            pclient = dequeue();
+        }
         pthread_mutex_unlock(&mutex);
         if (pclient != NULL) {
-            // connection available
             handle_connection(pclient);
         }
+        
     }
 }
 
@@ -127,7 +142,7 @@ void *handle_connection(void *p_client_socket)
         close(client_socket);
         return NULL;
     }
-    sleep(rand() % 2 + 1); // simulate slow disk access 
+    sleep(rand() % 2 + 2); // simulate slow disk access 
 
     // read file contents and send them to client
     // note this is a fine example program, but rather insecure.
